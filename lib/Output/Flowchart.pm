@@ -1,6 +1,7 @@
 package Output::Flowchart;
 use strict;
 use warnings;
+use utf8;
 use File::Spec;
 use File::Basename;
 
@@ -18,7 +19,7 @@ sub write {
     my ($self, $entry_files, $dependencies) = @_;
     
     my $md_file = File::Spec->catfile($self->{output_dir}, 'flowchart.md');
-    open my $fh, ">:encoding($self->{encoding})", $md_file
+    open my $fh, ">:utf8", $md_file
         or die "Cannot create flowchart file: $md_file\n";
     
     print $fh "# バッチジョブ呼び出しフロー\n\n";

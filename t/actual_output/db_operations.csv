@@ -1,4 +1,4 @@
-ãã¡ã¤ã«,æä½,ãã¼ãã«å,è¡çªå·
+ファイル,操作,テーブル名,行番号
 /workspaces/JobNet/t/fixtures/level2_script.sh,SQLPLUS,final_update.sql,11
 /workspaces/JobNet/t/fixtures/simple_call.sh,SQLPLUS,process_records.sql,14
 /workspaces/JobNet/t/fixtures/complex.sh,SQLPLUS,insert_data.sql,31

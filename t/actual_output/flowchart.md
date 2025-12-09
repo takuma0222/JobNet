@@ -1,6 +1,6 @@
-# ãããã¸ã§ãå¼ã³åºããã­ã¼
+# バッチジョブ呼び出しフロー
 
-## èµ·ç¹: /workspaces/JobNet/t/fixtures/complex.sh
+## 起点: /workspaces/JobNet/t/fixtures/complex.sh
 
 ```mermaid
 flowchart TD

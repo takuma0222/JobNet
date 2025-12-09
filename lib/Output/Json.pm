@@ -1,6 +1,7 @@
 package Output::Json;
 use strict;
 use warnings;
+use utf8;
 use File::Spec;
 
 # Try to use JSON::PP (standard in Perl 5.14+)
@@ -27,7 +28,7 @@ sub write {
     my ($self, $dependencies) = @_;
     
     my $json_file = File::Spec->catfile($self->{output_dir}, 'dependencies.json');
-    open my $fh, ">:encoding($self->{encoding})", $json_file
+    open my $fh, ">:utf8", $json_file
         or die "Cannot create JSON file: $json_file\n";
     
     if ($HAS_JSON_PP) {

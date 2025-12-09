@@ -1,6 +1,7 @@
 package Output::Csv;
 use strict;
 use warnings;
+use utf8;
 use File::Spec;
 
 sub new {
@@ -17,7 +18,7 @@ sub write_dependencies {
     my ($self, $dependencies) = @_;
     
     my $csv_file = File::Spec->catfile($self->{output_dir}, 'dependencies.csv');
-    open my $fh, ">:encoding($self->{encoding})", $csv_file
+    open my $fh, ">:utf8", $csv_file
         or die "Cannot create CSV file: $csv_file\n";
     
     # Header
@@ -39,7 +40,7 @@ sub write_file_io {
     my ($self, $file_ios) = @_;
     
     my $csv_file = File::Spec->catfile($self->{output_dir}, 'file_io.csv');
-    open my $fh, ">:encoding($self->{encoding})", $csv_file
+    open my $fh, ">:utf8", $csv_file
         or die "Cannot create CSV file: $csv_file\n";
     
     # Header
@@ -60,7 +61,7 @@ sub write_db_operations {
     my ($self, $db_ops) = @_;
     
     my $csv_file = File::Spec->catfile($self->{output_dir}, 'db_operations.csv');
-    open my $fh, ">:encoding($self->{encoding})", $csv_file
+    open my $fh, ">:utf8", $csv_file
         or die "Cannot create CSV file: $csv_file\n";
     
     # Header

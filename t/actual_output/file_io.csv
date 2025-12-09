@@ -1,4 +1,4 @@
-ãã¡ã¤ã«,ç¨®å¥,å¯¾è±¡,è¡çªå·
+ファイル,種別,対象,行番号
 t/fixtures/lib/common.sh,OUTPUT,/var/log/common.log,6
 t/fixtures/jobs/daily_job.sh,OUTPUT,/data/daily/output.csv,11
 t/fixtures/jobs/daily_job.sh,INPUT,/data/daily/input.csv,11

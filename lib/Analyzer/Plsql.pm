@@ -1,6 +1,7 @@
 package Analyzer::Plsql;
 use strict;
 use warnings;
+use utf8;
 use parent 'Analyzer::Base';
 
 sub analyze {

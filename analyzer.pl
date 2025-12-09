@@ -1,6 +1,8 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
+use utf8;
+use open ':std', ':encoding(utf8)';
 use Getopt::Long;
 use File::Basename;
 use File::Spec;
@@ -220,7 +222,7 @@ $logger->info("警告: " . $logger->warning_count);
 
 # Write summary to file
 my $summary_file = File::Spec->catfile($output_dir, 'summary.txt');
-open my $sum_fh, ">:encoding($encoding)", $summary_file
+open my $sum_fh, ">:utf8", $summary_file
     or die "Error: Cannot create summary file: $summary_file\n";
 print $sum_fh "バッチジョブフロー解析 サマリー\n";
 print $sum_fh "=" x 50 . "\n\n";

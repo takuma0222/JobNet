@@ -10,7 +10,7 @@ sub new {
     my $encoding = $args{encoding} // 'utf-8';
     
     my $log_file = File::Spec->catfile($output_dir, 'analysis.log');
-    open my $fh, ">:encoding($encoding)", $log_file
+    open my $fh, ">:utf8", $log_file
         or die "Cannot create log file: $log_file\n";
     
     my $self = {
