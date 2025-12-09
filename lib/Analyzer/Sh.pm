@@ -130,8 +130,8 @@ sub detect_file_io {
         $self->add_file_io('OUTPUT', $file, $line_num);
     }
     
-    # Input redirection: < file
-    if ($line =~ /<\s*([^\s;|&]+)/) {
+    # Input redirection: < file (but not << for here-document)
+    if ($line =~ /(?<!<)<(?!<)\s*([^\s;|&]+)/) {
         my $file = $1;
         $file = $self->{var_resolver}->expand_path($file) if $self->{var_resolver};
         $self->add_file_io('INPUT', $file, $line_num);
