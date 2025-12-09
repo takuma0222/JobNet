@@ -40,6 +40,7 @@ perl analyzer.pl --input /path/to/file_list.txt --output /path/to/output/
 | `--encoding` | ファイルエンコーディング | utf-8 |
 | `--env` | 環境変数を指定（複数回指定可能） | - |
 | `--env-file` | 環境変数定義ファイルのパス | - |
+| `--search-dir` | スクリプト検索ディレクトリ（複数回指定可能） | `/opt/batch`, `/usr/local/cobol`, `/home/app`, `/var/scripts` |
 
 ### 入力ファイルの形式
 
@@ -81,6 +82,13 @@ perl analyzer.pl --input /path/to/file_list.txt --output /path/to/output/
 ```bash
 # 基本実行
 perl analyzer.pl --input /opt/batch/file_list.txt --output /tmp/analysis_result/
+
+# 検索ディレクトリを追加して実行
+perl analyzer.pl \
+  --input /opt/batch/file_list.txt \
+  --output /tmp/analysis_result/ \
+  --search-dir /opt/project/scripts \
+  --search-dir /usr/local/bin
 
 # 深度を20階層まで解析
 perl analyzer.pl \
@@ -164,6 +172,8 @@ batch-flow-analyzer/
 | $VAR形式 | `$BATCH_HOME/job` | ✅ |
 | csh set | `set VAR=value` | ✅ |
 | csh setenv | `setenv VAR value` | ✅ |
+| export | `export VAR=value` | ✅ |
+| declare | `declare VAR=value` | ✅ |
 
 ### 変数解決の優先順位
 
