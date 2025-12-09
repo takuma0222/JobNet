@@ -1,0 +1,9 @@
+[
+  {"callee": "daily_job.sh", "callee_path": "t/fixtures/jobs/daily_job.sh", "caller": "complex.sh", "caller_path": "/workspaces/JobNet/t/fixtures/complex.sh", "depth": 0, "entry_point": "/workspaces/JobNet/t/fixtures/complex.sh", "language": "sh", "line_number": 7},
+  {"callee": "common.sh", "callee_path": "t/fixtures/lib/common.sh", "caller": "daily_job.sh", "caller_path": "t/fixtures/jobs/daily_job.sh", "depth": 1, "entry_point": "/workspaces/JobNet/t/fixtures/complex.sh", "language": "sh", "line_number": 8},
+  {"callee": "common.sh", "callee_path": "t/fixtures/lib/common.sh", "caller": "daily_job.sh", "caller_path": "t/fixtures/jobs/daily_job.sh", "depth": 1, "entry_point": "/workspaces/JobNet/t/fixtures/complex.sh", "language": "sh", "line_number": 8},
+  {"callee": "common.sh", "callee_path": "t/fixtures/lib/common.sh", "caller": "complex.sh", "caller_path": "/workspaces/JobNet/t/fixtures/complex.sh", "depth": 0, "entry_point": "/workspaces/JobNet/t/fixtures/complex.sh", "language": "sh", "line_number": 10},
+  {"callee": "common.sh", "callee_path": "t/fixtures/lib/common.sh", "caller": "complex.sh", "caller_path": "/workspaces/JobNet/t/fixtures/complex.sh", "depth": 0, "entry_point": "/workspaces/JobNet/t/fixtures/complex.sh", "language": "sh", "line_number": 10},
+  {"callee": "simple_call.sh", "callee_path": "/workspaces/JobNet/t/fixtures/simple_call.sh", "caller": "complex.sh", "caller_path": "/workspaces/JobNet/t/fixtures/complex.sh", "depth": 0, "entry_point": "/workspaces/JobNet/t/fixtures/complex.sh", "language": "sh", "line_number": 11},
+  {"callee": "level2_script.sh", "callee_path": "/workspaces/JobNet/t/fixtures/level2_script.sh", "caller": "simple_call.sh", "caller_path": "/workspaces/JobNet/t/fixtures/simple_call.sh", "depth": 1, "entry_point": "/workspaces/JobNet/t/fixtures/complex.sh", "language": "sh", "line_number": 8}
+]

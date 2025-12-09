@@ -81,9 +81,13 @@ sub detect_file_io {
     my ($self, $line, $line_num) = @_;
     
     # SELECT file-name ASSIGN TO external-name
-    if ($line =~ /SELECT\s+([A-Z0-9\-_]+)\s+ASSIGN\s+TO\s+([^\s.]+)/i) {
+    if ($line =~ /SELECT\s+([A-Z0-9\-_]+)\s+ASSIGN\s+TO\s+(['"]?[A-Z0-9\-_.]+(?:['"])?)/i) {
         my $internal = $1;
         my $external = $2;
+        
+        # Remove trailing dot if present (COBOL statement terminator)
+        $external =~ s/\.$//;
+        
         # Determine if INPUT or OUTPUT based on file usage (simplified)
         # In real COBOL, need to check OPEN statement
         $self->add_file_io('FILE', $external, $line_num);

@@ -1,0 +1,11 @@
+ãã¡ã¤ã«,ç¨®å¥,å¯¾è±¡,è¡çªå·
+t/fixtures/lib/common.sh,OUTPUT,/var/log/common.log,6
+t/fixtures/jobs/daily_job.sh,OUTPUT,/data/daily/output.csv,11
+t/fixtures/jobs/daily_job.sh,INPUT,/data/daily/input.csv,11
+/workspaces/JobNet/t/fixtures/level2_script.sh,OUTPUT,/var/log/batch.log,8
+/workspaces/JobNet/t/fixtures/simple_call.sh,OUTPUT,/tmp/output.txt,11
+/workspaces/JobNet/t/fixtures/simple_call.sh,INPUT,/data/input/records.csv,11
+/workspaces/JobNet/t/fixtures/complex.sh,INPUT,<EOF,17
+/workspaces/JobNet/t/fixtures/complex.sh,OUTPUT,/opt/batch/log/start.log,27
+/workspaces/JobNet/t/fixtures/complex.sh,OUTPUT,error.log,28
+/workspaces/JobNet/t/fixtures/complex.sh,INPUT,input.dat,28

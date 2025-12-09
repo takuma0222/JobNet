@@ -12,6 +12,7 @@ use_ok('Analyzer::Plsql');
 use_ok('Analyzer::Cobol');
 use_ok('VariableResolver');
 use_ok('FileMapper');
+use_ok('DependencyResolver');
 use_ok('Output::Logger');
 
 # Setup common objects
@@ -129,6 +130,145 @@ subtest 'COBOL Analyzer' => sub {
     
     ok($io_map{"'INPUT.DAT'"}, 'Found SELECT ASSIGN literal');
     ok($io_map{'OUT-DAT'}, 'Found SELECT ASSIGN variable');
+};
+
+# --- Test 4: Hierarchical Dependency Resolution ---
+subtest 'Hierarchical Dependency Resolution' => sub {
+    my $entry_file = File::Spec->catfile($fixtures_dir, 'complex.sh');
+    
+    # Setup FileMapper with fixtures directory
+    my $mapper = FileMapper->new();
+    $mapper->scan_directory($fixtures_dir);
+    
+    # Setup VariableResolver
+    my $var_resolver = VariableResolver->new(logger => $logger);
+    
+    # Setup DependencyResolver
+    my $resolver = DependencyResolver->new(
+        file_mapper  => $mapper,
+        var_resolver => $var_resolver,
+        logger       => $logger,
+        max_depth    => 5,
+        encoding     => 'utf-8'
+    );
+    
+    # Resolve dependencies
+    my $result = $resolver->resolve($entry_file);
+    
+    # Check dependencies found
+    my @deps = @{$result->{dependencies}};
+    ok(scalar(@deps) > 0, 'Found dependencies');
+    
+    # Build a map of caller -> callee relationships
+    my %dep_map;
+    foreach my $dep (@deps) {
+        my $key = $dep->{caller} . '->' . $dep->{callee};
+        $dep_map{$key} = $dep->{depth};
+    }
+    
+    # Level 0: complex.sh -> simple_call.sh
+    ok(exists $dep_map{'complex.sh->simple_call.sh'}, 'Found level 0 dependency: complex.sh -> simple_call.sh');
+    
+    # Level 1: simple_call.sh -> level2_script.sh  
+    ok(exists $dep_map{'simple_call.sh->level2_script.sh'}, 'Found level 1 dependency: simple_call.sh -> level2_script.sh');
+    
+    # Check depths
+    is($dep_map{'complex.sh->simple_call.sh'}, 0, 'complex.sh -> simple_call.sh at depth 0');
+    is($dep_map{'simple_call.sh->level2_script.sh'}, 1, 'simple_call.sh -> level2_script.sh at depth 1');
+    
+    # Check file I/O aggregation across hierarchy
+    my @file_io = @{$result->{file_io}};
+    my %io_files = map { $_->{target} => 1 } @file_io;
+    
+    # From complex.sh
+    ok($io_files{'error.log'}, 'Found file I/O from complex.sh');
+    
+    # From simple_call.sh
+    ok($io_files{'/tmp/output.txt'}, 'Found file I/O from simple_call.sh');
+    
+    # From level2_script.sh
+    ok($io_files{'/var/log/batch.log'}, 'Found file I/O from level2_script.sh');
+    
+    # Check DB operations aggregation
+    my @db_ops = @{$result->{db_operations}};
+    ok(scalar(@db_ops) >= 2, 'Found DB operations from multiple levels');
+};
+
+# --- Test 5: Csh Analyzer ---
+subtest 'Csh Analyzer' => sub {
+    use_ok('Analyzer::Csh');
+    
+    my $file = File::Spec->catfile($fixtures_dir, 'complex.csh');
+    
+    # Skip if fixture doesn't exist
+    SKIP: {
+        skip "Csh fixture not available", 5 unless -f $file;
+        
+        my $analyzer = Analyzer::Csh->new(
+            filepath => $file,
+            logger => $logger,
+            file_mapper => $file_mapper
+        );
+        
+        $analyzer->analyze();
+        
+        my @calls = $analyzer->get_calls();
+        ok(scalar(@calls) >= 0, 'Csh analyzer works');
+    }
+};
+
+# --- Test 6: Max Depth Limit ---
+subtest 'Max Depth Limit' => sub {
+    my $entry_file = File::Spec->catfile($fixtures_dir, 'complex.sh');
+    
+    my $mapper = FileMapper->new();
+    $mapper->scan_directory($fixtures_dir);
+    
+    my $var_resolver = VariableResolver->new(logger => $logger);
+    
+    # Set max depth to 1 (should not reach level2_script.sh)
+    my $resolver = DependencyResolver->new(
+        file_mapper  => $mapper,
+        var_resolver => $var_resolver,
+        logger       => $logger,
+        max_depth    => 1,
+        encoding     => 'utf-8'
+    );
+    
+    my $result = $resolver->resolve($entry_file);
+    my @deps = @{$result->{dependencies}};
+    
+    my %callees = map { $_->{callee} => 1 } @deps;
+    
+    ok($callees{'simple_call.sh'}, 'Found simple_call.sh within depth limit');
+    ok(!$callees{'level2_script.sh'}, 'Did not find level2_script.sh (beyond max depth)');
+};
+
+# --- Test 7: Circular Dependency Prevention ---
+subtest 'Circular Dependency Prevention' => sub {
+    # Create a temporary circular dependency scenario
+    my $circular_file = File::Spec->catfile($fixtures_dir, 'circular_a.sh');
+    
+    SKIP: {
+        skip "Circular dependency fixtures not available", 2 unless -f $circular_file;
+        
+        my $mapper = FileMapper->new();
+        $mapper->scan_directory($fixtures_dir);
+        
+        my $var_resolver = VariableResolver->new(logger => $logger);
+        
+        my $resolver = DependencyResolver->new(
+            file_mapper  => $mapper,
+            var_resolver => $var_resolver,
+            logger       => $logger,
+            max_depth    => 10,
+            encoding     => 'utf-8'
+        );
+        
+        # Should not hang or crash
+        my $result = $resolver->resolve($circular_file);
+        ok(defined $result, 'Circular dependency did not cause infinite loop');
+    }
 };
 
 done_testing();

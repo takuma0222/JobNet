@@ -181,10 +181,11 @@ sub detect_db_operations {
     }
     
     # sqlplus commands (basic detection)
-    if ($line =~ /sqlplus/i) {
-        # Just note that sqlplus is used
+    if ($line =~ /sqlplus\s+(?:[^\s@]+\/[^\s@]+@[^\s]+)?\s*@?([^\s]+)/i) {
+        my $script = $1;
+        $self->add_db_operation('SQLPLUS', $script, $line_num);
         if ($self->{logger}) {
-            $self->{logger}->info("sqlplus実行検出: (行: $line_num)");
+            $self->{logger}->info("sqlplus実行検出: $script (行: $line_num)");
         }
     }
 }
