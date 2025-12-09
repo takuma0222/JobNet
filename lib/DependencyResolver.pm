@@ -31,6 +31,14 @@ sub analyzed_files {
 sub resolve {
     my ($self, $entry_file) = @_;
     
+    # Reset analyzed files for each entry point to ensure complete analysis
+    $self->{analyzed_files} = {};
+    
+    # Clear script-defined variables for fresh analysis
+    if ($self->{var_resolver}) {
+        $self->{var_resolver}->clear_script_variables();
+    }
+    
     my $all_dependencies = [];
     my $all_file_io = [];
     my $all_db_ops = [];
@@ -73,6 +81,11 @@ sub _resolve_recursive {
         return;
     }
     
+    # Clear script-defined variables before analyzing each file
+    if ($self->{var_resolver}) {
+        $self->{var_resolver}->clear_script_variables();
+    }
+    
     # Detect language
     my $lang = $self->{language_detector}->detect($current_file, $self->{encoding});
     unless ($lang) {
@@ -105,7 +118,7 @@ sub _resolve_recursive {
         my $line_num = $call->{line};
         
         # Resolve the called file
-        my $resolved_path = $self->{file_mapper}->resolve($called_name, $current_dir);
+        my $resolved_path = $self->{file_mapper}->resolve($called_name, $current_dir, $self->{logger});
         
         if ($resolved_path) {
             # Detect language of called file

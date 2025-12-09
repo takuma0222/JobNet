@@ -7,11 +7,27 @@ sub analyze {
     my ($self) = @_;
     my @lines = $self->read_file();
     
+    # Join all lines for preprocessing
+    my $content = join('', @lines);
+    
+    # Remove block comments /* ... */ first
+    $content =~ s|/\*.*?\*/||gs;
+    
+    # Protect string literals by replacing with placeholders
+    my @strings;
+    $content =~ s/'([^']*(?:''[^']*)*)'/
+        push @strings, $1;
+        "__STRING_" . $#strings . "__"
+    /ge;
+    
+    # Split back into lines for line-number tracking
+    @lines = split /\n/, $content;
+    
     my $line_num = 0;
     foreach my $line (@lines) {
         $line_num++;
         
-        # Remove SQL comments
+        # Remove SQL line comments
         $line =~ s/--.*$//;
         
         # Detect procedure/package calls
@@ -30,7 +46,7 @@ sub detect_calls {
     
     # EXECUTE procedure_name or EXEC procedure_name
     if ($line =~ /(?:EXECUTE|EXEC)\s+([A-Z0-9_\.]+)/i) {
-        my $proc = $1;
+        my $proc = uc($1);  # Normalize to uppercase
         unless ($proc =~ /^IMMEDIATE$/i) {  # Skip EXECUTE IMMEDIATE
             $self->add_call($proc, $line_num);
         }
@@ -38,14 +54,14 @@ sub detect_calls {
     
     # Package.procedure() call
     if ($line =~ /([A-Z0-9_]+\.[A-Z0-9_]+)\s*\(/i) {
-        $self->add_call($1, $line_num);
+        $self->add_call(uc($1), $line_num);  # Normalize to uppercase
     }
     
     # Simple procedure call: procedure_name(args)
     if ($line =~ /^\s*([A-Z0-9_]+)\s*\(/i) {
-        my $proc = $1;
+        my $proc = uc($1);  # Normalize to uppercase
         # Exclude SQL keywords
-        unless ($proc =~ /^(?:INSERT|UPDATE|DELETE|SELECT|CREATE|ALTER|DROP)$/i) {
+        unless ($proc =~ /^(?:INSERT|UPDATE|DELETE|SELECT|CREATE|ALTER|DROP|IF|WHILE|FOR|LOOP|BEGIN|END|DECLARE|EXCEPTION|RETURN|CASE|WHEN)$/) {
             $self->add_call($proc, $line_num);
         }
     }
@@ -75,27 +91,27 @@ sub detect_db_operations {
     
     # INSERT INTO table
     if ($line =~ /INSERT\s+INTO\s+([A-Z0-9_]+)/i) {
-        $self->add_db_operation('INSERT', $1, $line_num);
+        $self->add_db_operation('INSERT', uc($1), $line_num);
     }
     
     # UPDATE table
     if ($line =~ /UPDATE\s+([A-Z0-9_]+)/i) {
-        $self->add_db_operation('UPDATE', $1, $line_num);
+        $self->add_db_operation('UPDATE', uc($1), $line_num);
     }
     
     # DELETE FROM table
     if ($line =~ /DELETE\s+FROM\s+([A-Z0-9_]+)/i) {
-        $self->add_db_operation('DELETE', $1, $line_num);
+        $self->add_db_operation('DELETE', uc($1), $line_num);
     }
     
     # SELECT ... FROM table
     if ($line =~ /SELECT\s+.*\s+FROM\s+([A-Z0-9_]+)/i) {
-        $self->add_db_operation('SELECT', $1, $line_num);
+        $self->add_db_operation('SELECT', uc($1), $line_num);
     }
     
     # MERGE INTO table
     if ($line =~ /MERGE\s+INTO\s+([A-Z0-9_]+)/i) {
-        $self->add_db_operation('MERGE', $1, $line_num);
+        $self->add_db_operation('MERGE', uc($1), $line_num);
     }
     
     # EXECUTE IMMEDIATE (dynamic SQL)

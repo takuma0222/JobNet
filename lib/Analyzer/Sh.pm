@@ -16,21 +16,76 @@ sub analyze {
     }
     
     my $line_num = 0;
+    my $heredoc_end = undef;  # Track here-document terminator
+    
     foreach my $line (@lines) {
         $line_num++;
         
-        # Remove comments
-        $line =~ s/#.*$//;
+        # Skip lines inside here-document
+        if (defined $heredoc_end) {
+            if ($line =~ /^\s*\Q$heredoc_end\E\s*$/) {
+                $heredoc_end = undef;  # End of here-document
+            }
+            next;
+        }
+        
+        # Detect here-document start: <<TAG, <<'TAG', <<"TAG", <<-TAG
+        if ($line =~ /<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/) {
+            $heredoc_end = $1;
+        }
+        
+        # Remove comments (but not inside quotes)
+        my $code_line = $self->_remove_comments($line);
         
         # Detect script calls
-        $self->detect_calls($line, $line_num);
+        $self->detect_calls($code_line, $line_num);
         
         # Detect file I/O
-        $self->detect_file_io($line, $line_num);
+        $self->detect_file_io($code_line, $line_num);
         
         # Detect DB operations (sqlplus)
-        $self->detect_db_operations($line, $line_num);
+        $self->detect_db_operations($code_line, $line_num);
     }
+}
+
+# Remove comments while respecting quoted strings
+sub _remove_comments {
+    my ($self, $line) = @_;
+    
+    my $result = '';
+    my $in_single_quote = 0;
+    my $in_double_quote = 0;
+    my $i = 0;
+    my $len = length($line);
+    
+    while ($i < $len) {
+        my $char = substr($line, $i, 1);
+        my $prev_char = $i > 0 ? substr($line, $i - 1, 1) : '';
+        
+        # Handle escape sequences
+        if ($prev_char eq '\\') {
+            $result .= $char;
+            $i++;
+            next;
+        }
+        
+        # Toggle quote states
+        if ($char eq "'" && !$in_double_quote) {
+            $in_single_quote = !$in_single_quote;
+            $result .= $char;
+        } elsif ($char eq '"' && !$in_single_quote) {
+            $in_double_quote = !$in_double_quote;
+            $result .= $char;
+        } elsif ($char eq '#' && !$in_single_quote && !$in_double_quote) {
+            # Comment starts here, ignore rest of line
+            last;
+        } else {
+            $result .= $char;
+        }
+        $i++;
+    }
+    
+    return $result;
 }
 
 sub detect_calls {

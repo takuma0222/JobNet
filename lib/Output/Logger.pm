@@ -2,6 +2,7 @@ package Output::Logger;
 use strict;
 use warnings;
 use File::Spec;
+use IO::Handle;
 
 sub new {
     my ($class, %args) = @_;

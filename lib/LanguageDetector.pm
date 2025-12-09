@@ -45,10 +45,11 @@ sub detect {
     }
     close $fh;
     
-    # Check shebang
-    if ($header =~ m{^#!/bin/bash}m || $header =~ m{^#!/bin/sh}m) {
+    # Check shebang (support /bin/*, /usr/bin/*, and /usr/bin/env patterns)
+    if ($header =~ m{^#!\s*(?:/usr)?/bin/(?:env\s+)?(?:ba)?sh}m || 
+        $header =~ m{^#!\s*(?:/usr)?/bin/(?:env\s+)?ksh}m) {
         return 'sh';
-    } elsif ($header =~ m{^#!/bin/csh}m || $header =~ m{^#!/bin/tcsh}m) {
+    } elsif ($header =~ m{^#!\s*(?:/usr)?/bin/(?:env\s+)?(?:t)?csh}m) {
         return 'csh';
     }
     

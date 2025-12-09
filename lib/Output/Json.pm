@@ -3,6 +3,16 @@ use strict;
 use warnings;
 use File::Spec;
 
+# Try to use JSON::PP (standard in Perl 5.14+)
+my $HAS_JSON_PP = 0;
+BEGIN {
+    eval {
+        require JSON::PP;
+        JSON::PP->import();
+        $HAS_JSON_PP = 1;
+    };
+}
+
 sub new {
     my ($class, %args) = @_;
     my $self = {
@@ -20,37 +30,59 @@ sub write {
     open my $fh, ">:encoding($self->{encoding})", $json_file
         or die "Cannot create JSON file: $json_file\n";
     
-    # Manual JSON generation (no external modules)
-    print $fh "[\n";
-    
-    my $count = 0;
-    foreach my $dep (@$dependencies) {
-        print $fh "," if $count > 0;
-        print $fh "  {\n";
-        print $fh "    \"entry_point\": " . $self->_json_string($dep->{entry_point}) . ",\n";
-        print $fh "    \"caller\": " . $self->_json_string($dep->{caller}) . ",\n";
-        print $fh "    \"callee\": " . $self->_json_string($dep->{callee}) . ",\n";
-        print $fh "    \"language\": " . $self->_json_string($dep->{language}) . ",\n";
-        print $fh "    \"depth\": " . $dep->{depth} . ",\n";
-        print $fh "    \"caller_path\": " . $self->_json_string($dep->{caller_path}) . ",\n";
-        print $fh "    \"callee_path\": " . $self->_json_string($dep->{callee_path}) . ",\n";
-        print $fh "    \"line_number\": " . $dep->{line_number} . "\n";
-        print $fh "  }\n";
-        $count++;
+    if ($HAS_JSON_PP) {
+        # Use JSON::PP for proper encoding
+        my $json = JSON::PP->new->utf8(0)->pretty->canonical;
+        print $fh $json->encode($dependencies);
+    } else {
+        # Fallback to manual JSON generation
+        print $fh $self->_encode_json($dependencies);
     }
     
-    print $fh "]\n";
     close $fh;
+}
+
+# Fallback manual JSON encoder
+sub _encode_json {
+    my ($self, $data) = @_;
+    
+    if (ref $data eq 'ARRAY') {
+        my @items = map { $self->_encode_json($_) } @$data;
+        return "[\n" . join(",\n", map { "  $_" } @items) . "\n]";
+    } elsif (ref $data eq 'HASH') {
+        my @pairs;
+        foreach my $key (sort keys %$data) {
+            my $val = $self->_encode_json($data->{$key});
+            push @pairs, $self->_json_string($key) . ": " . $val;
+        }
+        return "{" . join(", ", @pairs) . "}";
+    } elsif (!defined $data) {
+        return "null";
+    } elsif ($data =~ /^-?\d+$/) {
+        return $data;  # Integer
+    } elsif ($data =~ /^-?\d+\.\d+$/) {
+        return $data;  # Float
+    } else {
+        return $self->_json_string($data);
+    }
 }
 
 sub _json_string {
     my ($self, $str) = @_;
     $str //= '';
-    $str =~ s/\\/\\\\/g;
-    $str =~ s/"/\\"/g;
-    $str =~ s/\n/\\n/g;
-    $str =~ s/\r/\\r/g;
-    $str =~ s/\t/\\t/g;
+    
+    # Escape special characters per JSON spec
+    $str =~ s/\\/\\\\/g;  # Backslash first
+    $str =~ s/"/\\"/g;     # Double quote
+    $str =~ s/\n/\\n/g;    # Newline
+    $str =~ s/\r/\\r/g;    # Carriage return
+    $str =~ s/\t/\\t/g;    # Tab
+    $str =~ s/\f/\\f/g;    # Form feed
+    $str =~ s/\x08/\\b/g;  # Backspace
+    
+    # Escape control characters (U+0000 to U+001F)
+    $str =~ s/([\x00-\x1f])/sprintf("\\u%04x", ord($1))/ge;
+    
     return "\"$str\"";
 }
 

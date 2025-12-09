@@ -33,12 +33,12 @@ sub add_file {
 }
 
 sub resolve {
-    my ($self, $name, $current_dir) = @_;
+    my ($self, $name, $current_dir, $logger) = @_;
     
     # If already an absolute path that exists, return it
     return $name if File::Spec->file_name_is_absolute($name) && -f $name;
     
-    # If relative path from current directory
+    # If relative path from current directory (prefer this)
     if ($current_dir && !File::Spec->file_name_is_absolute($name)) {
         my $full_path = File::Spec->catfile($current_dir, $name);
         return $full_path if -f $full_path;
@@ -46,6 +46,13 @@ sub resolve {
     
     # Strip directory part if present and lookup by basename
     my $basename = basename($name);
+    
+    # Warn if multiple files match the same basename
+    if (exists $self->{name_to_paths}{$basename} && 
+        scalar(@{$self->{name_to_paths}{$basename}}) > 1 && $logger) {
+        $logger->warn("複数のファイルが同名で存在: $basename -> " . 
+                      join(', ', @{$self->{name_to_paths}{$basename}}));
+    }
     
     # Remove common extensions to search for base name
     my $name_without_ext = $basename;

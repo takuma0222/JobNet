@@ -14,11 +14,20 @@ sub analyze {
     foreach my $line (@lines) {
         $line_num++;
         
-        # Remove COBOL comments (asterisk in column 7)
-        next if $line =~ /^\s{6}\*/;
+        # Remove COBOL comments:
+        # - asterisk (*) in column 7 (comment line)
+        # - slash (/) in column 7 (page break/comment)
+        # - D in column 7 (debug line, treated as comment)
+        next if length($line) >= 7 && substr($line, 6, 1) =~ /[*\/D]/;
+        
+        # Remove inline comments (*> format, COBOL 2002+)
+        $line =~ s/\*>.*$//;
         
         # Detect CALL statements
         $self->detect_calls($line, $line_num);
+        
+        # Detect COPY statements (copybook dependencies)
+        $self->detect_copy($line, $line_num);
         
         # Detect file I/O (SELECT ... ASSIGN TO)
         $self->detect_file_io($line, $line_num);
@@ -34,6 +43,19 @@ sub analyze {
                 $in_exec_sql = 0;
                 $sql_buffer = '';
             }
+        }
+    }
+}
+
+sub detect_copy {
+    my ($self, $line, $line_num) = @_;
+    
+    # COPY copybook-name. or COPY copybook-name OF library-name.
+    if ($line =~ /COPY\s+([A-Z0-9\-_]+)/i) {
+        my $copybook = $1;
+        $self->add_call($copybook, $line_num);
+        if ($self->{logger}) {
+            $self->{logger}->info("COPY句検出: $copybook (行: $line_num)");
         }
     }
 }

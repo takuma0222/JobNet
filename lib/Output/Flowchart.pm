@@ -38,23 +38,31 @@ sub write {
         print $fh "```mermaid\n";
         print $fh "flowchart TD\n";
         
-        # Build node map
-        my %nodes;
+        # Build node map (use full paths as keys to avoid collisions)
+        my %nodes;       # path => node_id
+        my %node_labels; # node_id => display label
         my $node_counter = 0;
         my %edges;
         
         # Add entry node
         my $entry_basename = basename($entry_file);
-        my $entry_node_id = $self->_get_node_id(\%nodes, \$node_counter, $entry_basename);
+        my $entry_node_id = $self->_get_node_id(\%nodes, \$node_counter, $entry_file);
+        $node_labels{$entry_node_id} = $entry_basename;
         
         # Process dependencies
         foreach my $dep (@$deps) {
+            my $caller_path = $dep->{caller_path} // $dep->{caller};
+            my $callee_path = $dep->{callee_path} // $dep->{callee};
             my $caller = $dep->{caller};
             my $callee = $dep->{callee};
             my $lang = $dep->{language};
             
-            my $caller_id = $self->_get_node_id(\%nodes, \$node_counter, $caller);
-            my $callee_id = $self->_get_node_id(\%nodes, \$node_counter, $callee);
+            my $caller_id = $self->_get_node_id(\%nodes, \$node_counter, $caller_path);
+            my $callee_id = $self->_get_node_id(\%nodes, \$node_counter, $callee_path);
+            
+            # Store display labels (basename)
+            $node_labels{$caller_id} //= $caller;
+            $node_labels{$callee_id} //= $callee;
             
             # Store edge
             my $edge_key = "$caller_id->$callee_id";
@@ -66,9 +74,9 @@ sub write {
         }
         
         # Generate node definitions
-        foreach my $name (sort keys %nodes) {
-            my $node_id = $nodes{$name};
-            my $label = $self->_escape_mermaid($name);
+        foreach my $path (sort keys %nodes) {
+            my $node_id = $nodes{$path};
+            my $label = $self->_escape_mermaid($node_labels{$node_id} // basename($path));
             print $fh "    ${node_id}[$label]\n";
         }
         

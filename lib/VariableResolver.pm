@@ -21,8 +21,23 @@ sub extract_variables {
     # Pattern 2: VAR="value" (double quotes)
     # Pattern 3: VAR='value' (single quotes)
     # Pattern 4: VAR=${OTHER}/path (variable reference in value)
+    # Pattern 5: export VAR=value (bash export)
+    # Pattern 6: declare VAR=value (bash declare)
+    
+    # Handle: export VAR=value or export VAR="value"
+    while ($content =~ /^\s*(?:export|declare(?:\s+-[a-z]+)?)\s+([A-Za-z_][A-Za-z0-9_]*)=(.+?)(?:\s*[#;\n]|$)/gm) {
+        my ($name, $value) = ($1, $2);
+        $value =~ s/\s+$//;
+        $value =~ s/^["']|["']$//g;
+        $self->{variables}{$name} = $value;
+    }
+    
+    # Handle: VAR=value (standard assignment)
     while ($content =~ /^\s*([A-Za-z_][A-Za-z0-9_]*)=(.+?)(?:\s*[#;\n]|$)/gm) {
         my ($name, $value) = ($1, $2);
+        
+        # Skip if already set (export takes precedence in order of appearance)
+        next if exists $self->{variables}{$name};
         
         # Remove trailing whitespace
         $value =~ s/\s+$//;
@@ -33,6 +48,77 @@ sub extract_variables {
         # Store the variable
         $self->{variables}{$name} = $value;
     }
+    
+    # Second pass: expand variable references in stored values
+    $self->_expand_stored_variables();
+}
+
+# Expand variable references within stored variable values
+sub _expand_stored_variables {
+    my ($self) = @_;
+    my $max_iterations = 10;
+    my %seen;  # Track expansion history to detect circular references
+    
+    for (my $i = 0; $i < $max_iterations; $i++) {
+        my $changed = 0;
+        foreach my $name (keys %{$self->{variables}}) {
+            my $value = $self->{variables}{$name};
+            
+            # Skip if no variable references
+            next unless $value =~ /\$/;
+            
+            # Detect circular reference
+            my $key = "$name:$value";
+            if ($seen{$key}++) {
+                if ($self->{logger}) {
+                    $self->{logger}->warn("循環参照を検出: $name = $value");
+                }
+                next;
+            }
+            
+            my $new_value = $self->_expand_path_internal($value, {$name => 1});
+            if ($new_value ne $value) {
+                $self->{variables}{$name} = $new_value;
+                $changed = 1;
+            }
+        }
+        last unless $changed;
+    }
+}
+
+# Internal expand_path that tracks visited variables to prevent infinite loops
+sub _expand_path_internal {
+    my ($self, $path, $visiting) = @_;
+    $visiting //= {};
+    
+    return $path unless defined $path;
+    
+    my $max_iterations = 10;
+    my $iteration = 0;
+    
+    while ($iteration < $max_iterations) {
+        my $changed = 0;
+        
+        # Expand ${VAR} pattern
+        $path =~ s/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/
+            $visiting->{$1} ? "\${$1}" : $self->resolve_variable($1)
+        /ge and $changed = 1;
+        
+        # Expand $VAR pattern
+        $path =~ s/\$([A-Za-z_][A-Za-z0-9_]*)(?=\/|:|$|\s|\.|\-|_(?![A-Za-z0-9]))/
+            $visiting->{$1} ? "\$$1" : $self->resolve_variable($1)
+        /ge and $changed = 1;
+        
+        # Handle $VAR at end of string
+        $path =~ s/\$([A-Za-z_][A-Za-z0-9_]*)$/
+            $visiting->{$1} ? "\$$1" : $self->resolve_variable($1)
+        /e and $changed = 1;
+        
+        last unless $changed;
+        $iteration++;
+    }
+    
+    return $path;
 }
 
 # Expand variables in a path
@@ -54,8 +140,14 @@ sub expand_path {
         }
         
         # Expand $VAR pattern (but not $$ or $digit)
-        # Use word boundary or specific delimiters to avoid matching $VAR in middle of text
-        if ($path =~ s/\$([A-Za-z_][A-Za-z0-9_]*)(?=\/|:|$|\s)/$self->resolve_variable($1)/ge) {
+        # Match $VAR followed by: /, :, end of string, whitespace, or common delimiters
+        # Also handle $VAR at end of string or before non-alphanumeric chars
+        if ($path =~ s/\$([A-Za-z_][A-Za-z0-9_]*)(?=\/|:|$|\s|\.|\-|_(?![A-Za-z0-9]))/$self->resolve_variable($1)/ge) {
+            $changed = 1;
+        }
+        
+        # Handle $VAR at end of string (no lookahead needed)
+        if ($path =~ s/\$([A-Za-z_][A-Za-z0-9_]*)$/$self->resolve_variable($1)/e) {
             $changed = 1;
         }
         

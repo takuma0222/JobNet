@@ -28,15 +28,17 @@ my $max_depth = 10;
 my $encoding = 'utf-8';
 my @env_vars = ();
 my $env_file = '';
+my @search_dirs_cli = ();
 
 GetOptions(
-    'input=s'     => \$input_file,
-    'output=s'    => \$output_dir,
-    'max-depth=i' => \$max_depth,
-    'encoding=s'  => \$encoding,
-    'env=s@'      => \@env_vars,
-    'env-file=s'  => \$env_file,
-) or die "Usage: $0 --input FILE --output DIR [--max-depth N] [--encoding ENC] [--env VAR=VALUE] [--env-file FILE]\n";
+    'input=s'      => \$input_file,
+    'output=s'     => \$output_dir,
+    'max-depth=i'  => \$max_depth,
+    'encoding=s'   => \$encoding,
+    'env=s@'       => \@env_vars,
+    'env-file=s'   => \$env_file,
+    'search-dir=s@' => \@search_dirs_cli,
+) or die "Usage: $0 --input FILE --output DIR [--max-depth N] [--encoding ENC] [--env VAR=VALUE] [--env-file FILE] [--search-dir DIR]\n";
 
 die "Error: --input is required\n" unless $input_file;
 die "Error: --output is required\n" unless $output_dir;
@@ -117,17 +119,28 @@ $logger->info("対象ファイル数: " . scalar(@entry_files));
 # Initialize file mapper
 my $file_mapper = FileMapper->new();
 
-# Scan for all script files in common directories
+# Scan for all script files in search directories
 $logger->info("ファイルマッピング構築中...");
-my @search_dirs = (
-    '/opt/batch',
-    '/usr/local/cobol',
-    '/home/app',
-    '/var/scripts',
-);
+my @search_dirs;
+if (@search_dirs_cli) {
+    @search_dirs = @search_dirs_cli;
+    $logger->info("検索ディレクトリ(CLI指定): " . join(', ', @search_dirs));
+} else {
+    @search_dirs = (
+        '/opt/batch',
+        '/usr/local/cobol',
+        '/home/app',
+        '/var/scripts',
+    );
+    $logger->info("検索ディレクトリ(デフォルト): " . join(', ', @search_dirs));
+}
 
 foreach my $dir (@search_dirs) {
-    $file_mapper->scan_directory($dir) if -d $dir;
+    if (-d $dir) {
+        $file_mapper->scan_directory($dir);
+    } else {
+        $logger->warn("検索ディレクトリが存在しません: $dir");
+    }
 }
 
 # Add entry files to mapper
