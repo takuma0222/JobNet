@@ -1,0 +1,11 @@
+#!/bin/sh
+# Executable without extension
+# Should be detected by shebang
+
+BASE=/opt/app
+LOG=$BASE/logs
+
+source $BASE/config.sh
+./run.sh
+
+echo "Done" > $LOG/output.log

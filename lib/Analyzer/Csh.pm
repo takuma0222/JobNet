@@ -46,6 +46,93 @@ sub analyze {
     }
 }
 
+# Pass 1 only: Extract variables and source calls for 2-pass analysis
+sub analyze_pass1 {
+    my ($self) = @_;
+    
+    my @lines = $self->read_file();
+    my $content = join('', @lines);
+    
+    # Extract csh-style variable definitions
+    if ($self->{var_resolver}) {
+        $self->extract_csh_variables($content);
+    }
+    
+    my $line_num = 0;
+    my $heredoc_end = undef;
+    
+    foreach my $line (@lines) {
+        $line_num++;
+        
+        if (defined $heredoc_end) {
+            if ($line =~ /^\s*\Q$heredoc_end\E\s*$/) {
+                $heredoc_end = undef;
+            }
+            next;
+        }
+        
+        if ($line =~ /<<\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/) {
+            $heredoc_end = $1;
+        }
+        
+        my $code_line = $self->_remove_comments($line);
+        
+        # Only detect source calls in pass 1
+        $self->detect_source_calls($code_line, $line_num);
+    }
+    
+    return @{$self->{calls}};
+}
+
+# Pass 2: Full analysis with all variables from sourced files available
+sub analyze_pass2 {
+    my ($self) = @_;
+    
+    # Clear previous analysis results
+    $self->{calls} = [];
+    $self->{file_io} = [];
+    $self->{db_operations} = [];
+    
+    my @lines = $self->read_file();
+    
+    my $line_num = 0;
+    my $heredoc_end = undef;
+    
+    foreach my $line (@lines) {
+        $line_num++;
+        
+        if (defined $heredoc_end) {
+            if ($line =~ /^\s*\Q$heredoc_end\E\s*$/) {
+                $heredoc_end = undef;
+            }
+            next;
+        }
+        
+        if ($line =~ /<<\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/) {
+            $heredoc_end = $1;
+        }
+        
+        my $code_line = $self->_remove_comments($line);
+        
+        # Full analysis with variables available
+        $self->detect_calls($code_line, $line_num);
+        $self->detect_file_io($code_line, $line_num);
+    }
+}
+
+# Detect only source calls (for pass 1)
+sub detect_source_calls {
+    my ($self, $line, $line_num) = @_;
+    
+    # source command: source file.csh or source file (without extension)
+    if ($line =~ /source\s+([^\s;|&]+)/) {
+        my $script = $1;
+        return if $script =~ /^-/;  # Skip options
+        $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
+        $self->add_call($script, $line_num, 'source');
+    }
+}
+
 # Remove comments while respecting quoted strings
 sub _remove_comments {
     my ($self, $line) = @_;
@@ -105,19 +192,28 @@ sub extract_csh_variables {
 sub detect_calls {
     my ($self, $line, $line_num) = @_;
     
-    # source command: source file.csh
-    if ($line =~ /source\s+([^\s;|&]+\.(?:csh|tcsh))/) {
+    # source command: source file (extension-independent)
+    if ($line =~ /source\s+([^\s;|&]+)/) {
         my $script = $1;
-        $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
-        $self->add_call($script, $line_num, 'source');
+        # Skip options
+        unless ($script =~ /^-/) {
+            $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
+            $self->add_call($script, $line_num, 'source');
+        }
     }
     
-    # Direct script execution: /path/to/script.csh or ./script.csh
-    if ($line =~ m{([/.\w\$\{\}]+\.(?:csh|tcsh))}) {
-        my $script = $1;
-        unless ($line =~ /echo|print/) {
-            $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
-            $self->add_call($script, $line_num, 'execute');
+    # Absolute path execution (extension-independent)
+    # Match: /path/to/script, /A/B/AAAA, /opt/batch/job.jcl, etc.
+    unless ($line =~ /^\s*(?:echo|print|printf|cat)\s/ || $line =~ /^\s*(?:set|setenv)\s/) {
+        while ($line =~ m{(?:^|\s|&&|\|\||;)\s*(/[A-Za-z0-9/_\-\$\{\}\.]+)}g) {
+            my $cmd = $1;
+            # Skip system directories
+            next if $cmd =~ m{^/(?:bin|usr|sbin|lib|etc|dev|proc|sys)/};
+            # Skip if it looks like a file path being redirected to
+            next if $line =~ /[>]\s*\Q$cmd\E/;
+            
+            $cmd = $self->{var_resolver}->expand_path($cmd) if $self->{var_resolver};
+            $self->add_call($cmd, $line_num, 'execute');
         }
     }
 }
@@ -125,11 +221,16 @@ sub detect_calls {
 sub detect_file_io {
     my ($self, $line, $line_num) = @_;
     
-    # Output redirection: > file or >> file
-    if ($line =~ /(?:>>?)\s*([^\s;|&]+)/) {
+    # Output redirection: > file, >> file, >! file, >>! file (csh force overwrite)
+    if ($line =~ /(?:>>?!?)\s*([^\s;|&]+)/) {
         my $file = $1;
-        $file = $self->{var_resolver}->expand_path($file) if $self->{var_resolver};
-        $self->add_file_io('OUTPUT', $file, $line_num);
+        # Handle >! pattern: strip leading ! if present
+        $file =~ s/^!//;
+        # Only add if file is valid (not empty and not just a number)
+        unless ($file eq '' || $file =~ /^\d+$/) {
+            $file = $self->{var_resolver}->expand_path($file) if $self->{var_resolver};
+            $self->add_file_io('OUTPUT', $file, $line_num);
+        }
     }
     
     # Input redirection: < file

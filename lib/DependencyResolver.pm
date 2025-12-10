@@ -103,23 +103,86 @@ sub _resolve_recursive {
         return;
     }
     
-    # Analyze file
-    eval {
-        $analyzer->analyze();
-    };
-    if ($@) {
-        $self->{logger}->warn("解析エラー: $current_file - $@") if $self->{logger};
-        return;
-    }
-    
     my $current_basename = basename($current_file);
     my $current_dir = dirname($current_file);
     
-    # Process calls
+    # 2-pass analysis for shell scripts to properly resolve sourced variables
+    if ($lang eq 'sh' || $lang eq 'csh') {
+        # Pass 1: Extract variables and process source calls first
+        eval {
+            my @source_calls = $analyzer->analyze_pass1();
+            
+            # Process source calls recursively BEFORE pass 2
+            # This ensures variables from sourced files are available
+            foreach my $call (@source_calls) {
+                my $called_name = $call->{name};
+                my $line_num = $call->{line};
+                
+                my $resolved_path = $self->{file_mapper}->resolve($called_name, $current_dir, $self->{logger});
+                
+                if ($resolved_path && !exists $self->{analyzed_files}{$resolved_path}) {
+                    # Detect language of called file
+                    my $called_lang = $self->{language_detector}->detect($resolved_path, $self->{encoding});
+                    
+                    push @$deps, {
+                        entry_point => $entry_file,
+                        caller      => $current_basename,
+                        callee      => basename($resolved_path),
+                        language    => $called_lang // 'unknown',
+                        depth       => $depth,
+                        caller_path => $current_file,
+                        callee_path => $resolved_path,
+                        line_number => $line_num,
+                        call_type   => 'source',
+                    };
+                    
+                    # Recursively analyze sourced file (pass call_type=source to preserve variables)
+                    $self->_resolve_recursive(
+                        $entry_file,
+                        $resolved_path,
+                        $depth + 1,
+                        $deps,
+                        $file_ios,
+                        $db_ops,
+                        'source'
+                    );
+                } elsif (!$resolved_path) {
+                    $self->{logger}->warn("source先未解決: $called_name (行: $line_num, ファイル: $current_file)") if $self->{logger};
+                }
+            }
+        };
+        if ($@) {
+            $self->{logger}->warn("Pass1解析エラー: $current_file - $@") if $self->{logger};
+            return;
+        }
+        
+        # Pass 2: Full analysis with all sourced variables now available
+        eval {
+            $analyzer->analyze_pass2();
+        };
+        if ($@) {
+            $self->{logger}->warn("Pass2解析エラー: $current_file - $@") if $self->{logger};
+            return;
+        }
+    } else {
+        # Non-shell files: use single-pass analysis
+        eval {
+            $analyzer->analyze();
+        };
+        if ($@) {
+            $self->{logger}->warn("解析エラー: $current_file - $@") if $self->{logger};
+            return;
+        }
+    }
+    
+    # Process calls (for pass 2 results, or single-pass for non-shell)
     foreach my $call ($analyzer->get_calls()) {
         my $called_name = $call->{name};
         my $line_num = $call->{line};
-        my $call_type = $call->{type} // 'execute';
+        my $this_call_type = $call->{type} // 'execute';
+        
+        # Skip source calls for shell scripts (already processed in pass 1)
+        next if ($lang eq 'sh' || $lang eq 'csh') && $this_call_type eq 'source';
         
         # Resolve the called file
         my $resolved_path = $self->{file_mapper}->resolve($called_name, $current_dir, $self->{logger});
@@ -137,11 +200,10 @@ sub _resolve_recursive {
                 caller_path => $current_file,
                 callee_path => $resolved_path,
                 line_number => $line_num,
-                call_type   => $call_type,
+                call_type   => $this_call_type,
             };
             
             # Recursive analysis
-            # Pass call_type so source calls preserve variables
             $self->_resolve_recursive(
                 $entry_file,
                 $resolved_path,
@@ -149,7 +211,7 @@ sub _resolve_recursive {
                 $deps,
                 $file_ios,
                 $db_ops,
-                $call_type
+                $this_call_type
             );
         } else {
             $self->{logger}->warn("呼び出し先未解決: $called_name (行: $line_num, ファイル: $current_file)") if $self->{logger};

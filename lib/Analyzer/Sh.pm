@@ -6,6 +6,11 @@ use parent 'Analyzer::Base';
 
 sub analyze {
     my ($self) = @_;
+    
+    # 2-pass analysis for proper variable resolution from sourced files
+    # Pass 1: Extract variables and detect source calls only
+    # Pass 2: Full analysis with all variables available
+    
     my @lines = $self->read_file();
     
     # Read entire file content for variable extraction
@@ -46,6 +51,99 @@ sub analyze {
         
         # Detect DB operations (sqlplus)
         $self->detect_db_operations($code_line, $line_num);
+    }
+}
+
+# Pass 1 only: Extract variables and source calls for 2-pass analysis
+# This is called by DependencyResolver to collect variables from sourced files first
+sub analyze_pass1 {
+    my ($self) = @_;
+    
+    my @lines = $self->read_file();
+    my $content = join('', @lines);
+    
+    # Extract variable definitions
+    if ($self->{var_resolver}) {
+        $self->{var_resolver}->extract_variables($content);
+    }
+    
+    my $line_num = 0;
+    my $heredoc_end = undef;
+    
+    foreach my $line (@lines) {
+        $line_num++;
+        
+        # Skip lines inside here-document
+        if (defined $heredoc_end) {
+            if ($line =~ /^\s*\Q$heredoc_end\E\s*$/) {
+                $heredoc_end = undef;
+            }
+            next;
+        }
+        
+        if ($line =~ /<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/) {
+            $heredoc_end = $1;
+        }
+        
+        my $code_line = $self->_remove_comments($line);
+        
+        # Only detect source calls in pass 1
+        $self->detect_source_calls($code_line, $line_num);
+    }
+    
+    return @{$self->{calls}};  # Return source calls for processing
+}
+
+# Pass 2: Full analysis with all variables from sourced files available
+sub analyze_pass2 {
+    my ($self) = @_;
+    
+    # Clear previous analysis results
+    $self->{calls} = [];
+    $self->{file_io} = [];
+    $self->{db_operations} = [];
+    
+    my @lines = $self->read_file();
+    
+    my $line_num = 0;
+    my $heredoc_end = undef;
+    
+    foreach my $line (@lines) {
+        $line_num++;
+        
+        # Skip lines inside here-document
+        if (defined $heredoc_end) {
+            if ($line =~ /^\s*\Q$heredoc_end\E\s*$/) {
+                $heredoc_end = undef;
+            }
+            next;
+        }
+        
+        if ($line =~ /<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/) {
+            $heredoc_end = $1;
+        }
+        
+        my $code_line = $self->_remove_comments($line);
+        
+        # Full analysis with variables available
+        $self->detect_calls($code_line, $line_num);
+        $self->detect_file_io($code_line, $line_num);
+        $self->detect_db_operations($code_line, $line_num);
+    }
+}
+
+# Detect only source calls (for pass 1)
+sub detect_source_calls {
+    my ($self, $line, $line_num) = @_;
+    
+    # source command: source file.sh or . file.sh
+    # Also match files without extension for csh files
+    if ($line =~ /(?:source|\.)\s+([^\s;|&]+)/) {
+        my $script = $1;
+        # Filter out obvious non-script arguments
+        return if $script =~ /^-/;  # Skip options like -e
+        $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
+        $self->add_call($script, $line_num, 'source');
     }
 }
 
@@ -92,29 +190,76 @@ sub _remove_comments {
 sub detect_calls {
     my ($self, $line, $line_num) = @_;
     
-    # source command: source file.sh or . file.sh
-    if ($line =~ /(?:source|\.)\s+([^\s;|&]+\.(?:sh|bash|csh))/) {
+    # source command: source file or . file (extension-independent)
+    if ($line =~ /(?:source|\.)\s+([^\s;|&]+)/) {
         my $script = $1;
-        $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
-        $self->add_call($script, $line_num, 'source');
-    }
-    
-    # Direct script execution: /path/to/script.sh or ./script.sh
-    if ($line =~ m{([/\.\w\-\$\{\}]+\.(?:sh|bash|csh))}) {
-        my $script = $1;
-        # Avoid false positives from strings in echo, etc.
-        unless ($line =~ /echo|print|cat.*<</) {
+        # Skip options like -e
+        unless ($script =~ /^-/) {
             $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
-            $self->add_call($script, $line_num, 'execute');
+            $self->add_call($script, $line_num, 'source');
         }
     }
     
-    # Executable without extension (common pattern)
-    if ($line =~ m{^\s*([/\w\-\$\{\}]+/[\w\-]+)\s*$} || $line =~ m{\s+([/\w\-\$\{\}]+/[\w\-]+)\s*[;&|]}) {
+    # Absolute path execution (extension-independent)
+    # Match: /path/to/script, /A/B/AAAA, ${VAR}/path, $VAR/path, etc.
+    my $check_line = $line;
+    
+    # Pattern 1: Absolute path starting with /
+    while ($check_line =~ m{(?:^|\s|&&|\|\||;)\s*(/[A-Za-z0-9/_\-\.\$\{\}]+)}g) {
         my $cmd = $1;
-        # Check if it looks like a script path
-        if ($cmd =~ m{/} && $cmd !~ /^\/(?:bin|usr|etc|var|tmp)/) {
-            $cmd = $self->{var_resolver}->expand_path($cmd) if $self->{var_resolver};
+        # Skip system directories
+        next if $cmd =~ m{^/(?:bin|usr|sbin|lib|etc|dev|proc|sys)/};
+        # Skip if it looks like a file path being redirected to
+        next if $line =~ /[>]\s*\Q$cmd\E/;
+        # Skip if cmd is an argument to echo/print (not after && or ||)
+        # e.g., "echo /path" should skip, but "echo x && /path" should not
+        next if $line =~ /^\s*(?:echo|print|printf)\s+[^&|;]*\Q$cmd\E/ && 
+                $line !~ /(?:&&|\|\||;)\s*\Q$cmd\E/;
+        
+        $cmd = $self->{var_resolver}->expand_path($cmd) if $self->{var_resolver};
+        $self->add_call($cmd, $line_num, 'execute');
+    }
+    
+    # Pattern 2: Variable-based absolute path (${VAR}/path or $VAR/path)
+    while ($check_line =~ m{(?:^|\s|&&|\|\||;)\s*(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/[A-Za-z0-9/_\-\.\$\{\}]*)}g) {
+        my $cmd = $1;
+        # Skip if it looks like assignment
+        next if $line =~ /^\s*\w+=/;
+        # Skip if it looks like a file path being redirected to
+        next if $line =~ /[>]\s*\Q$cmd\E/;
+        # Skip if cmd is an argument to echo/print (not after && or ||)
+        next if $line =~ /^\s*(?:echo|print|printf)\s+[^&|;]*\Q$cmd\E/ && 
+                $line !~ /(?:&&|\|\||;)\s*\Q$cmd\E/;
+        
+        $cmd = $self->{var_resolver}->expand_path($cmd) if $self->{var_resolver};
+        $self->add_call($cmd, $line_num, 'execute');
+    }
+    
+    # Pattern 3: Relative path starting with ./ or ../
+    while ($check_line =~ m{(?:^|\s|&&|\|\||;)\s*(\.\.?/[A-Za-z0-9/_\-\.\$\{\}]+)}g) {
+        my $cmd = $1;
+        # Skip if it looks like a file path being redirected to
+        next if $line =~ /[>]\s*\Q$cmd\E/;
+        # Skip if cmd is an argument to echo/print (not after && or ||)
+        next if $line =~ /^\s*(?:echo|print|printf)\s+[^&|;]*\Q$cmd\E/ && 
+                $line !~ /(?:&&|\|\||;)\s*\Q$cmd\E/;
+        
+        $cmd = $self->{var_resolver}->expand_path($cmd) if $self->{var_resolver};
+        $self->add_call($cmd, $line_num, 'execute');
+    }
+    
+    # Pattern 4: Variable-only execution (${VAR} or $VAR at start of command)
+    while ($check_line =~ m{(?:^|\s|&&|\|\||;)\s*(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)(?:\s|$|;|&|\|)}g) {
+        my $cmd = $1;
+        # Skip if it looks like assignment
+        next if $line =~ /^\s*\w+=/;
+        # Skip if cmd is an argument to echo/print (not after && or ||)
+        next if $line =~ /^\s*(?:echo|print|printf)\s+[^&|;]*\Q$cmd\E/ && 
+                $line !~ /(?:&&|\|\||;)\s*\Q$cmd\E/;
+        
+        $cmd = $self->{var_resolver}->expand_path($cmd) if $self->{var_resolver};
+        # Only add if it looks like a path after expansion (contains / or is non-empty)
+        if ($cmd =~ m{/} || $cmd !~ /^\$/) {
             $self->add_call($cmd, $line_num, 'execute');
         }
     }
@@ -123,11 +268,17 @@ sub detect_calls {
 sub detect_file_io {
     my ($self, $line, $line_num) = @_;
     
-    # Output redirection: > file or >> file
-    if ($line =~ /(?:>>?)\s*([^\s;|&]+)/) {
+    # Output redirection: > file or >> file (also handles >! and >>! for csh)
+    # Pattern: >! or >>! followed by file, or > or >> followed by file
+    if ($line =~ /(?:>>?!?)\s*([^\s;|&]+)/) {
         my $file = $1;
-        $file = $self->{var_resolver}->expand_path($file) if $self->{var_resolver};
-        $self->add_file_io('OUTPUT', $file, $line_num);
+        # Handle >! pattern: strip leading ! if present
+        $file =~ s/^!//;
+        # Only add if file is valid (not empty and not just a number)
+        unless ($file eq '' || $file =~ /^\d+$/) {
+            $file = $self->{var_resolver}->expand_path($file) if $self->{var_resolver};
+            $self->add_file_io('OUTPUT', $file, $line_num);
+        }
     }
     
     # Input redirection: < file (but not << for here-document)

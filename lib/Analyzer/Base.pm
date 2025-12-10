@@ -1,18 +1,20 @@
 package Analyzer::Base;
 use strict;
 use warnings;
+use LanguageDetector;
 
 sub new {
     my ($class, %args) = @_;
     my $self = {
-        filepath      => $args{filepath},
-        encoding      => $args{encoding} // 'utf-8',
-        logger        => $args{logger},
-        file_mapper   => $args{file_mapper},
-        var_resolver  => $args{var_resolver},
-        calls         => [],      # List of called programs/scripts
-        file_io       => [],      # List of file I/O operations
-        db_operations => [],      # List of database operations
+        filepath          => $args{filepath},
+        encoding          => $args{encoding} // 'utf-8',
+        logger            => $args{logger},
+        file_mapper       => $args{file_mapper},
+        var_resolver      => $args{var_resolver},
+        language_detector => $args{language_detector} // LanguageDetector->new(),
+        calls             => [],      # List of called programs/scripts
+        file_io           => [],      # List of file I/O operations
+        db_operations     => [],      # List of database operations
     };
     bless $self, $class;
     return $self;

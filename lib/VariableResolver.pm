@@ -23,10 +23,30 @@ sub extract_variables {
     # Pattern 4: VAR=${OTHER}/path (variable reference in value)
     # Pattern 5: export VAR=value (bash export)
     # Pattern 6: declare VAR=value (bash declare)
+    # Pattern 7: setenv VAR value (csh/tcsh)
+    # Pattern 8: set VAR = value (csh/tcsh)
     
     # Handle: export VAR=value or export VAR="value"
     while ($content =~ /^\s*(?:export|declare(?:\s+-[a-z]+)?)\s+([A-Za-z_][A-Za-z0-9_]*)=(.+?)(?:\s*[#;\n]|$)/gm) {
         my ($name, $value) = ($1, $2);
+        $value =~ s/\s+$//;
+        $value =~ s/^["']|["']$//g;
+        $self->{variables}{$name} = $value;
+    }
+    
+    # Handle: setenv VAR value (csh/tcsh environment variable)
+    while ($content =~ /^\s*setenv\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)(?:\s*[#;\n]|$)/gm) {
+        my ($name, $value) = ($1, $2);
+        $value =~ s/\s+$//;
+        $value =~ s/^["']|["']$//g;
+        $self->{variables}{$name} = $value;
+    }
+    
+    # Handle: set VAR = value or set VAR=value (csh/tcsh local variable)
+    while ($content =~ /^\s*set\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)(?:\s*[#;\n]|$)/gm) {
+        my ($name, $value) = ($1, $2);
+        # Skip if already set
+        next if exists $self->{variables}{$name};
         $value =~ s/\s+$//;
         $value =~ s/^["']|["']$//g;
         $self->{variables}{$name} = $value;

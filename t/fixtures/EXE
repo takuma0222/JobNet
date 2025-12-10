@@ -1,0 +1,17 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. EXE.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT DATA-FILE ASSIGN TO "input.dat".
+       
+       DATA DIVISION.
+       FILE SECTION.
+       FD  DATA-FILE.
+       01  DATA-RECORD PIC X(100).
+       
+       PROCEDURE DIVISION.
+           OPEN INPUT DATA-FILE.
+           READ DATA-FILE.
+           CLOSE DATA-FILE.
+           STOP RUN.

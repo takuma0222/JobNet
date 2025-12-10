@@ -1,7 +1,7 @@
 # バッチジョブ呼び出しフロー
 
 ## 起点: /workspaces/JobNet/t/fixtures/complex.sh
-/workspaces/JobNet/t/fixtures/complex.sh,INPUT,<EOF,17
+
 ```mermaid
 flowchart TD
     N0[complex.sh]

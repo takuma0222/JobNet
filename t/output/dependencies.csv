@@ -1,0 +1,8 @@
+起点,呼び出し元,呼び出し先,言語,階層
+/workspaces/JobNet/t/fixtures/complex.sh,complex.sh,daily_job.sh,sh,0
+/workspaces/JobNet/t/fixtures/complex.sh,daily_job.sh,common.sh,sh,1
+/workspaces/JobNet/t/fixtures/complex.sh,daily_job.sh,common.sh,sh,1
+/workspaces/JobNet/t/fixtures/complex.sh,complex.sh,common.sh,sh,0
+/workspaces/JobNet/t/fixtures/complex.sh,complex.sh,common.sh,sh,0
+/workspaces/JobNet/t/fixtures/complex.sh,complex.sh,simple_call.sh,sh,0
+/workspaces/JobNet/t/fixtures/complex.sh,simple_call.sh,level2_script.sh,sh,1

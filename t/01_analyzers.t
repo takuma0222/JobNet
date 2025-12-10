@@ -321,15 +321,12 @@ subtest 'Source Variable Inheritance' => sub {
         is($var_resolver->resolve_variable('LIB_DIR'), '/opt/batch/lib', 
            'LIB_DIR (nested variable from source) is available');
         
-        # Note: Current implementation limitation - File I/O in the same file as source
-        # cannot use variables from the sourced file because the file is parsed in order.
-        # The sourced file's variables are only available AFTER the source line is processed
-        # by DependencyResolver, but File I/O detection happens during Analyzer::Sh analysis.
-        # This would require 2-pass analysis to fully support.
-        # For now, we just verify the variable IS available after full resolution.
+        # With 2-pass analysis, File I/O should now use expanded variables from sourced file
+        # Pass 1: source calls are processed first, loading variables from config.csh
+        # Pass 2: File I/O is detected with all variables available
         my %io_targets = map { $_->{target} => 1 } @io;
-        ok(exists $io_targets{'${BATCH_DIR}/output.log'} || exists $io_targets{'/opt/batch/output.log'}, 
-           'File I/O detected (variable may or may not be expanded depending on source order)');
+        ok(exists $io_targets{'/opt/batch/output.log'}, 
+           'File I/O uses BATCH_DIR expanded from sourced config.csh (2-pass analysis)');
         
         # Check that call_type is properly set
         my @source_calls = grep { ($_->{call_type} // '') eq 'source' } @deps;
