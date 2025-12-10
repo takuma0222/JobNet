@@ -4,6 +4,8 @@
 # 1. Variable Definitions
 export BASE_DIR="/opt/batch"
 declare LOG_DIR="${BASE_DIR}/log"
+ERROR_LOG="${LOG_DIR}/error.log"
+ARCHIVE_ERROR="${ERROR_LOG}.old"
 JOB_SCRIPT="${BASE_DIR}/jobs/daily_job.sh"
 
 # 2. Normal Call
@@ -26,6 +28,8 @@ echo "Call inside string: ./string_script.sh"
 # 6. File I/O
 echo "Start" > ${LOG_DIR}/start.log
 cat input.dat | grep "error" >> error.log
+echo "Error occurred" > ${ERROR_LOG}
+mv ${ERROR_LOG} ${ARCHIVE_ERROR}
 
 # 7. DB Operation
 sqlplus user/pass@db @insert_data.sql

@@ -41,10 +41,12 @@ sub read_file {
 }
 
 sub add_call {
-    my ($self, $called_name, $line_num) = @_;
+    my ($self, $called_name, $line_num, $call_type) = @_;
+    $call_type //= 'execute';  # default: execute, can be 'source'
     push @{$self->{calls}}, {
         name => $called_name,
         line => $line_num,
+        type => $call_type,
     };
 }
 

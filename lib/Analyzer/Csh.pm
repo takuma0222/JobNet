@@ -109,7 +109,7 @@ sub detect_calls {
     if ($line =~ /source\s+([^\s;|&]+\.(?:csh|tcsh))/) {
         my $script = $1;
         $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
-        $self->add_call($script, $line_num);
+        $self->add_call($script, $line_num, 'source');
     }
     
     # Direct script execution: /path/to/script.csh or ./script.csh
@@ -117,7 +117,7 @@ sub detect_calls {
         my $script = $1;
         unless ($line =~ /echo|print/) {
             $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
-            $self->add_call($script, $line_num);
+            $self->add_call($script, $line_num, 'execute');
         }
     }
 }

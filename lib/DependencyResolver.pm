@@ -49,7 +49,8 @@ sub resolve {
         0,
         $all_dependencies,
         $all_file_io,
-        $all_db_ops
+        $all_db_ops,
+        'entry'  # call_type: entry point (clear variables)
     );
     
     return {
@@ -60,7 +61,8 @@ sub resolve {
 }
 
 sub _resolve_recursive {
-    my ($self, $entry_file, $current_file, $depth, $deps, $file_ios, $db_ops) = @_;
+    my ($self, $entry_file, $current_file, $depth, $deps, $file_ios, $db_ops, $call_type) = @_;
+    $call_type //= 'execute';  # default: execute
     
     # Check max depth
     if ($depth >= $self->{max_depth}) {
@@ -81,8 +83,9 @@ sub _resolve_recursive {
         return;
     }
     
-    # Clear script-defined variables before analyzing each file
-    if ($self->{var_resolver}) {
+    # Clear script-defined variables only for entry point and execute calls
+    # source calls inherit variables from the caller scope
+    if ($self->{var_resolver} && $call_type ne 'source') {
         $self->{var_resolver}->clear_script_variables();
     }
     
@@ -116,6 +119,7 @@ sub _resolve_recursive {
     foreach my $call ($analyzer->get_calls()) {
         my $called_name = $call->{name};
         my $line_num = $call->{line};
+        my $call_type = $call->{type} // 'execute';
         
         # Resolve the called file
         my $resolved_path = $self->{file_mapper}->resolve($called_name, $current_dir, $self->{logger});
@@ -133,16 +137,19 @@ sub _resolve_recursive {
                 caller_path => $current_file,
                 callee_path => $resolved_path,
                 line_number => $line_num,
+                call_type   => $call_type,
             };
             
             # Recursive analysis
+            # Pass call_type so source calls preserve variables
             $self->_resolve_recursive(
                 $entry_file,
                 $resolved_path,
                 $depth + 1,
                 $deps,
                 $file_ios,
-                $db_ops
+                $db_ops,
+                $call_type
             );
         } else {
             $self->{logger}->warn("呼び出し先未解決: $called_name (行: $line_num, ファイル: $current_file)") if $self->{logger};

@@ -96,7 +96,7 @@ sub detect_calls {
     if ($line =~ /(?:source|\.)\s+([^\s;|&]+\.(?:sh|bash|csh))/) {
         my $script = $1;
         $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
-        $self->add_call($script, $line_num);
+        $self->add_call($script, $line_num, 'source');
     }
     
     # Direct script execution: /path/to/script.sh or ./script.sh
@@ -105,7 +105,7 @@ sub detect_calls {
         # Avoid false positives from strings in echo, etc.
         unless ($line =~ /echo|print|cat.*<</) {
             $script = $self->{var_resolver}->expand_path($script) if $self->{var_resolver};
-            $self->add_call($script, $line_num);
+            $self->add_call($script, $line_num, 'execute');
         }
     }
     
@@ -115,7 +115,7 @@ sub detect_calls {
         # Check if it looks like a script path
         if ($cmd =~ m{/} && $cmd !~ /^\/(?:bin|usr|etc|var|tmp)/) {
             $cmd = $self->{var_resolver}->expand_path($cmd) if $self->{var_resolver};
-            $self->add_call($cmd, $line_num);
+            $self->add_call($cmd, $line_num, 'execute');
         }
     }
 }

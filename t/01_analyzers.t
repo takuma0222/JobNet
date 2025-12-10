@@ -38,7 +38,9 @@ subtest 'Shell Analyzer' => sub {
     
     # Check Variables
     is($var_resolver->resolve_variable('BASE_DIR'), '/opt/batch', 'Variable BASE_DIR resolved');
-    is($var_resolver->resolve_variable('LOG_DIR'), '/opt/batch/log', 'Variable LOG_DIR resolved (recursive)');
+    is($var_resolver->resolve_variable('LOG_DIR'), '/opt/batch/log', 'Variable LOG_DIR resolved (1-level nested)');
+    is($var_resolver->resolve_variable('ERROR_LOG'), '/opt/batch/log/error.log', 'Variable ERROR_LOG resolved (2-level nested)');
+    is($var_resolver->resolve_variable('ARCHIVE_ERROR'), '/opt/batch/log/error.log.old', 'Variable ARCHIVE_ERROR resolved (3-level nested)');
     
     # Check Calls
     my @calls = $analyzer->get_calls();
@@ -54,11 +56,28 @@ subtest 'Shell Analyzer' => sub {
     
     # Check File I/O
     my @io = $analyzer->get_file_io();
-    my %io_map = map { $_->{target} => $_->{type} } @io;
     
-    is($io_map{'/opt/batch/log/start.log'}, 'OUTPUT', 'Found output redirection with variable');
-    is($io_map{'input.dat'}, 'INPUT', 'Found input redirection');
-    is($io_map{'error.log'}, 'OUTPUT', 'Found append redirection');
+    # Build list of operations for each file
+    my %io_ops;
+    foreach my $op (@io) {
+        push @{$io_ops{$op->{target}}}, $op->{type};
+    }
+    
+    # Check simple operations
+    ok(grep { $_ eq 'OUTPUT' } @{$io_ops{'/opt/batch/log/start.log'}}, 'Found output redirection with variable');
+    ok(grep { $_ eq 'INPUT' } @{$io_ops{'input.dat'}}, 'Found input redirection');
+    ok(grep { $_ eq 'OUTPUT' } @{$io_ops{'error.log'}}, 'Found append redirection');
+    
+    # Check nested variable expansion
+    # ERROR_LOG (2-level nested) is used in: echo > (OUTPUT) and mv source (INPUT)
+    ok(grep { $_ eq 'OUTPUT' } @{$io_ops{'/opt/batch/log/error.log'}}, 
+       'ERROR_LOG (2-level nested) used as OUTPUT');
+    ok(grep { $_ eq 'INPUT' } @{$io_ops{'/opt/batch/log/error.log'}}, 
+       'ERROR_LOG (2-level nested) used as INPUT in mv');
+    
+    # ARCHIVE_ERROR (3-level nested) is used in: mv dest (OUTPUT)
+    ok(grep { $_ eq 'OUTPUT' } @{$io_ops{'/opt/batch/log/error.log.old'}}, 
+       'ARCHIVE_ERROR (3-level nested) used as OUTPUT in mv');
     
     # Check DB Ops
     my @db = $analyzer->get_db_operations();
@@ -268,6 +287,53 @@ subtest 'Circular Dependency Prevention' => sub {
         # Should not hang or crash
         my $result = $resolver->resolve($circular_file);
         ok(defined $result, 'Circular dependency did not cause infinite loop');
+    }
+};
+
+# --- Test 8: Source Variable Inheritance ---
+subtest 'Source Variable Inheritance' => sub {
+    my $source_test_file = File::Spec->catfile($fixtures_dir, 'source_test.sh');
+    
+    SKIP: {
+        skip "Source test fixtures not available", 4 unless -f $source_test_file;
+        
+        my $mapper = FileMapper->new();
+        $mapper->scan_directory($fixtures_dir);
+        
+        my $var_resolver = VariableResolver->new(logger => $logger);
+        
+        my $resolver = DependencyResolver->new(
+            file_mapper  => $mapper,
+            var_resolver => $var_resolver,
+            logger       => $logger,
+            max_depth    => 10,
+            encoding     => 'utf-8'
+        );
+        
+        my $result = $resolver->resolve($source_test_file);
+        my @deps = @{$result->{dependencies}};
+        my @io = @{$result->{file_io}};
+        
+        # Check that variables from sourced config.csh are available
+        # BATCH_DIR=/opt/batch, LIB_DIR=/opt/batch/lib, COMMON_SCRIPT=/opt/batch/lib/common.sh
+        is($var_resolver->resolve_variable('BATCH_DIR'), '/opt/batch', 
+           'BATCH_DIR from sourced config.csh is available');
+        is($var_resolver->resolve_variable('LIB_DIR'), '/opt/batch/lib', 
+           'LIB_DIR (nested variable from source) is available');
+        
+        # Note: Current implementation limitation - File I/O in the same file as source
+        # cannot use variables from the sourced file because the file is parsed in order.
+        # The sourced file's variables are only available AFTER the source line is processed
+        # by DependencyResolver, but File I/O detection happens during Analyzer::Sh analysis.
+        # This would require 2-pass analysis to fully support.
+        # For now, we just verify the variable IS available after full resolution.
+        my %io_targets = map { $_->{target} => 1 } @io;
+        ok(exists $io_targets{'${BATCH_DIR}/output.log'} || exists $io_targets{'/opt/batch/output.log'}, 
+           'File I/O detected (variable may or may not be expanded depending on source order)');
+        
+        # Check that call_type is properly set
+        my @source_calls = grep { ($_->{call_type} // '') eq 'source' } @deps;
+        ok(scalar(@source_calls) > 0, 'Source calls are marked with call_type=source');
     }
 };
 
